@@ -1,61 +1,66 @@
-name: Build Vaultwarden Multi-Arch Docker Image # 工作流的名称
+name: Build Vaultwarden Multi-Arch Docker Image
 
 on:
   push:
     branches:
-      - main # 当代码推送到 main 分支时触发工作流
-  workflow_dispatch: # 允许您在 GitHub 网页界面手动触发此工作流
+      - main
+    tags: # <--- 新增：当有 Git Tag 被推送到仓库时也触发工作流
+      - '[1-2].[0-9]+.[0-9]+' # 匹配类似 1.x.x 或 2.x.x 的标签
+
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest # 使用最新的 Ubuntu 运行器 (这是 x86_64 架构)
+    runs-on: ubuntu-latest
 
-    env: # 定义作业级别的环境变量
-      DOCKER_REPO: server # 定义 Docker 仓库名，您可以根据需要更改为 'server' 或其他名称
+    env:
+      DOCKER_REPO: server
 
     steps:
-      - name: Checkout code # 步骤1: 检出仓库代码
+      - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # <--- 关键：获取完整的 Git 历史，以便 git describe 工作
 
-      - name: Set up Docker Buildx # 步骤2: 设置 Docker Buildx 环境，用于多架构构建
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub # 步骤3: 登录 Docker Hub
+      - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }} # 使用 GitHub Secret 存储的 Docker Hub 用户名
-          password: ${{ secrets.DOCKER_TOKEN }}    # 使用 GitHub Secret 存储的 Docker Hub 访问令牌
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
 
-      - name: Get Vaultwarden Version # 新增步骤：获取 Vaultwarden 版本号 (包含调试输出)
-        id: get_vaultwarden_version # 给这个步骤一个ID，以便引用其输出
+      - name: Get Vaultwarden Version (from Git Tag or Cargo.toml) # 修改步骤名称
+        id: get_vaultwarden_version
         run: |
-          # 调试：打印 Cargo.toml 的内容
-          echo "--- Cargo.toml 的内容 ---"
-          cat Cargo.toml
-          echo "-----------------------------"
+          # 尝试从 Git Tag 获取精确版本号
+          GIT_TAG_VERSION=$(git describe --tags --abbrev=0 --exact-match 2>/dev/null || true)
 
-          # 从 Cargo.toml 文件中提取版本号
-          # 例如，如果 Cargo.toml 中有 version = "1.34.1"
-          VERSION=$(grep '^version =' Cargo.toml | cut -d '"' -f 2)
-          echo "提取到的版本号 VERSION: $VERSION" # 调试：打印提取到的版本号
-
-          if [ -z "$VERSION" ]; then
-            echo "错误：无法从 Cargo.toml 中提取到 VAULTWARDEN_VERSION。"
-            echo "请检查 Cargo.toml 中 'version = \"...\"' 的格式是否正确。"
-            exit 1 # 如果版本号为空，则退出作业，以便您能看到错误
+          if [ -n "$GIT_TAG_VERSION" ]; then
+            # 如果当前提交是精确的 Git Tag
+            VERSION="$GIT_TAG_VERSION"
+            echo "版本号从 Git Tag 获取: $VERSION"
+          else
+            # 如果不是精确的 Git Tag，则从 Cargo.toml 获取
+            VERSION=$(grep '^version =' Cargo.toml | cut -d '"' -f 2)
+            echo "版本号从 Cargo.toml 获取: $VERSION"
           fi
 
-          echo "VAULTWARDEN_VERSION=$VERSION" >> $GITHUB_ENV # 将版本号保存为环境变量
+          if [ -z "$VERSION" ]; then
+            echo "错误：无法获取到 Vaultwarden 的版本号。"
+            exit 1
+          fi
 
-      - name: Build and Push Multi-Arch Docker image # 步骤4: 构建并推送到 Docker Hub
-        uses: docker/build-push-action@v5 # 使用 Docker 官方的构建/推送 Action
+          echo "VAULTWARDEN_VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Build and Push Multi-Arch Docker image
+        uses: docker/build-push-action@v5
         with:
-          context: . # Dockerfile 所在的上下文路径 (当前目录)
-          file: ./Dockerfile # Dockerfile 的路径
-          platforms: linux/amd64,linux/arm64 # 关键：指定要构建的架构为 AMD64 和 ARM64
-          push: true # 关键：设置为 true 以推送到 Docker Hub
-          # 关键：使用变量来构建镜像标签
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:latest
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ env.VAULTWARDEN_VERSION }}-${{ secrets.DOCKER_USERNAME }}
-
