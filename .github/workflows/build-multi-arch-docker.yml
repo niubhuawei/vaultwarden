@@ -10,8 +10,8 @@ jobs:
   build:
     runs-on: ubuntu-latest # 使用最新的 Ubuntu 运行器 (这是 x86_64 架构)
 
-    env: # --- 新增：定义作业级别的环境变量 ---
-      DOCKER_REPO: server # 定义 Docker 仓库名，您可以根据需要更改
+    env: # 定义作业级别的环境变量
+      DOCKER_REPO: server # 定义 Docker 仓库名，您可以根据需要更改为 'server' 或其他名称
 
     steps:
       - name: Checkout code # 步骤1: 检出仓库代码
@@ -26,6 +26,27 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }} # 使用 GitHub Secret 存储的 Docker Hub 用户名
           password: ${{ secrets.DOCKER_TOKEN }}    # 使用 GitHub Secret 存储的 Docker Hub 访问令牌
 
+      - name: Get Vaultwarden Version # 新增步骤：获取 Vaultwarden 版本号 (包含调试输出)
+        id: get_vaultwarden_version # 给这个步骤一个ID，以便引用其输出
+        run: |
+          # 调试：打印 Cargo.toml 的内容
+          echo "--- Cargo.toml 的内容 ---"
+          cat Cargo.toml
+          echo "-----------------------------"
+
+          # 从 Cargo.toml 文件中提取版本号
+          # 例如，如果 Cargo.toml 中有 version = "1.34.1"
+          VERSION=$(grep '^version =' Cargo.toml | cut -d '"' -f 2)
+          echo "提取到的版本号 VERSION: $VERSION" # 调试：打印提取到的版本号
+
+          if [ -z "$VERSION" ]; then
+            echo "错误：无法从 Cargo.toml 中提取到 VAULTWARDEN_VERSION。"
+            echo "请检查 Cargo.toml 中 'version = \"...\"' 的格式是否正确。"
+            exit 1 # 如果版本号为空，则退出作业，以便您能看到错误
+          fi
+
+          echo "VAULTWARDEN_VERSION=$VERSION" >> $GITHUB_ENV # 将版本号保存为环境变量
+
       - name: Build and Push Multi-Arch Docker image # 步骤4: 构建并推送到 Docker Hub
         uses: docker/build-push-action@v5 # 使用 Docker 官方的构建/推送 Action
         with:
@@ -34,7 +55,7 @@ jobs:
           platforms: linux/amd64,linux/arm64 # 关键：指定要构建的架构为 AMD64 和 ARM64
           push: true # 关键：设置为 true 以推送到 Docker Hub
           # 关键：使用变量来构建镜像标签
-          tags: | # 使用多行标签，通常会有一个 latest 标签和一个带版本信息的标签
-            ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:latest
-            ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ env.VAULTWARDEN_VERSION }}-${{ secrets.DOCKER_USERNAME }}
+          tags: | # 使用多行标签
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:latest # latest 标签
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ env.VAULTWARDEN_VERSION }}-${{ secrets.DOCKER_USERNAME }} # 官方版本号和 Docker Hub 用户名作为标签
 
