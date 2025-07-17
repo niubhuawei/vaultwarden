@@ -55,7 +55,7 @@ jobs:
           platforms: linux/amd64,linux/arm64 # 关键：指定要构建的架构为 AMD64 和 ARM64
           push: true # 关键：设置为 true 以推送到 Docker Hub
           # 关键：使用变量来构建镜像标签
-          tags: | # 使用多行标签
-            ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:latest # latest 标签
-            ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ env.VAULTWARDEN_VERSION }}-${{ secrets.DOCKER_USERNAME }} # 官方版本号和 Docker Hub 用户名作为标签
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ env.VAULTWARDEN_VERSION }}-${{ secrets.DOCKER_USERNAME }}
 
