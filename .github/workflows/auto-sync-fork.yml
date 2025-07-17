@@ -1,0 +1,37 @@
+name: Auto Sync Fork with Upstream # 工作流的名称
+
+on:
+  schedule:
+    # 每天 UTC 时间 00:00 (午夜) 运行
+    # 您可以根据需要调整 cron 表达式
+    # 例如：'0 0 * * *' 表示每天午夜
+    # 更多信息：https://crontab.guru/
+    - cron: '0 0 * * *'
+  workflow_dispatch: # 允许手动触发，方便测试
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest # 在 Ubuntu 运行器上执行
+
+    permissions:
+      contents: write # 授予工作流写入仓库内容的权限，以便推送同步的更改
+
+    steps:
+      - name: Checkout Forked Repository # 步骤1: 检出您的 Forked 仓库
+        uses: actions/checkout@v4
+        with:
+          # 默认的 GITHUB_TOKEN 具有写入权限，用于推送同步的更改
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # 获取完整的 Git 历史，以便 git-sync 正确工作
+          fetch-depth: 0
+          ref: main # 检出 main 分支
+
+      - name: Sync with Upstream # 步骤2: 同步上游仓库
+        uses: wei/git-sync@v4 # 使用 git-sync Action
+        with:
+          source_repo: "https://github.com/dani-garcia/vaultwarden.git" # 官方上游仓库的 URL
+          source_branch: "main" # 官方上游仓库要同步的分支
+          destination_branch: "main" # 您的 Forked 仓库要更新的分支
+          # 默认的 GITHUB_TOKEN 具有推送权限
+          # 确保您的 Forked 仓库的 GITHUB_TOKEN 具有写入权限 (通常默认就有)
+          github_token: ${{ secrets.GITHUB_TOKEN }}
