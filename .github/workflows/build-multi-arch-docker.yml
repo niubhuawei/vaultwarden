@@ -1,66 +1,63 @@
-name: Build Vaultwarden Multi-Arch Docker Image
+name: Build Vaultwarden Multi-Arch Docker Image # 工作流的名称
 
 on:
   push:
     branches:
-      - main
-    tags: # <--- 新增：当有 Git Tag 被推送到仓库时也触发工作流
-      - '[1-2].[0-9]+.[0-9]+' # 匹配类似 1.x.x 或 2.x.x 的标签
-
-  workflow_dispatch:
+      - main # 当代码推送到 main 分支时触发工作流
+  workflow_dispatch: # 允许您在 GitHub 网页界面手动触发此工作流
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # 使用最新的 Ubuntu 运行器 (这是 x86_64 架构)
 
-    env:
-      DOCKER_REPO: server
+    env: # 定义作业级别的环境变量
+      DOCKER_REPO: server # 定义 Docker 仓库名，您可以根据需要更改为 'server' 或其他名称
 
     steps:
-      - name: Checkout code
+      - name: Checkout code # 步骤1: 检出仓库代码
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # <--- 关键：获取完整的 Git 历史，以便 git describe 工作
 
-      - name: Set up Docker Buildx
+      - name: Set up Docker Buildx # 步骤2: 设置 Docker Buildx 环境，用于多架构构建
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
+      - name: Log in to Docker Hub # 步骤3: 登录 Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_TOKEN }}
+          username: ${{ secrets.DOCKER_USERNAME }} # 使用 GitHub Secret 存储的 Docker Hub 用户名
+          password: ${{ secrets.DOCKER_TOKEN }}    # 使用 GitHub Secret 存储的 Docker Hub 访问令牌
 
-      - name: Get Vaultwarden Version (from Git Tag or Cargo.toml) # 修改步骤名称
-        id: get_vaultwarden_version
+      - name: Get Vaultwarden Latest Release Version # 步骤4: 从 GitHub API 获取 Vaultwarden 最新发布版本号
+        id: get_latest_version # 给这个步骤一个ID，以便引用其输出
         run: |
-          # 尝试从 Git Tag 获取精确版本号
-          GIT_TAG_VERSION=$(git describe --tags --abbrev=0 --exact-match 2>/dev/null || true)
+          # 从 GitHub API 获取 Vaultwarden 的最新发布版本信息
+          # GitHub API 允许匿名访问，但有速率限制。对于 CI/CD 场景通常足够。
+          LATEST_RELEASE_INFO=$(curl -sL "https://api.github.com/repos/dani-garcia/vaultwarden/releases/latest")
+          
+          # 使用 jq 工具解析 JSON，提取 tag_name (例如 "1.34.1")
+          # GitHub Actions 运行器通常预装 jq。
+          VERSION=$(echo "$LATEST_RELEASE_INFO" | jq -r '.tag_name')
 
-          if [ -n "$GIT_TAG_VERSION" ]; then
-            # 如果当前提交是精确的 Git Tag
-            VERSION="$GIT_TAG_VERSION"
-            echo "版本号从 Git Tag 获取: $VERSION"
-          else
-            # 如果不是精确的 Git Tag，则从 Cargo.toml 获取
-            VERSION=$(grep '^version =' Cargo.toml | cut -d '"' -f 2)
-            echo "版本号从 Cargo.toml 获取: $VERSION"
+          echo "从 GitHub API 提取到的最新发布版本号: $VERSION" # 调试输出
+
+          # 检查是否成功获取到版本号
+          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+            echo "错误：无法从 GitHub API 获取到 Vaultwarden 的最新发布版本号。"
+            echo "API 响应: $LATEST_RELEASE_INFO"
+            exit 1 # 如果版本号为空，则退出作业，以便您能看到错误
           fi
 
-          if [ -z "$VERSION" ]; then
-            echo "错误：无法获取到 Vaultwarden 的版本号。"
-            exit 1
-          fi
+          echo "VAULTWARDEN_VERSION=$VERSION" >> $GITHUB_ENV # 将版本号保存为环境变量
 
-          echo "VAULTWARDEN_VERSION=$VERSION" >> $GITHUB_ENV
-
-      - name: Build and Push Multi-Arch Docker image
-        uses: docker/build-push-action@v5
+      - name: Build and Push Multi-Arch Docker image # 步骤5: 构建并推送到 Docker Hub
+        uses: docker/build-push-action@v5 # 使用 Docker 官方的构建/推送 Action
         with:
-          context: .
-          file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
+          context: . # Dockerfile 所在的上下文路径 (当前目录)
+          file: ./Dockerfile # Dockerfile 的路径
+          platforms: linux/amd64,linux/arm64 # 关键：指定要构建的架构为 AMD64 和 ARM64
+          push: true # 关键：设置为 true 以推送到 Docker Hub
+          # 关键：使用变量来构建镜像标签
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ env.VAULTWARDEN_VERSION }}
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ env.VAULTWARDEN_VERSION }}-${{ secrets.DOCKER_USERNAME }}
+
