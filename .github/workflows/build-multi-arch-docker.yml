@@ -30,23 +30,25 @@ jobs:
         id: get_latest_version # 给这个步骤一个ID，以便引用其输出
         run: |
           # 从 GitHub API 获取 Vaultwarden 的最新发布版本信息
-          # GitHub API 允许匿名访问，但有速率限制。对于 CI/CD 场景通常足够。
           LATEST_RELEASE_INFO=$(curl -sL "https://api.github.com/repos/dani-garcia/vaultwarden/releases/latest")
-          
-          # 使用 jq 工具解析 JSON，提取 tag_name (例如 "1.34.1")
-          # GitHub Actions 运行器通常预装 jq。
           VERSION=$(echo "$LATEST_RELEASE_INFO" | jq -r '.tag_name')
 
-          echo "从 GitHub API 提取到的最新发布版本号: $VERSION" # 调试输出
+          echo "从 GitHub API 提取到的最新发布版本号 (用于 Docker 标签): $VERSION" # 调试输出
 
-          # 检查是否成功获取到版本号
           if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
-            echo "错误：无法从 GitHub API 获取到 Vaultwarden 的最新发布版本号。"
+            echo "错误：无法从 GitHub API 获取到 Vaultwarden 的最新发布版本号。构建将立即终止。"
             echo "API 响应: $LATEST_RELEASE_INFO"
-            exit 1 # 如果版本号为空，则退出作业，以便您能看到错误
+            exit 1
           fi
 
           echo "VAULTWARDEN_VERSION=$VERSION" >> $GITHUB_ENV # 将版本号保存为环境变量
+
+      - name: Set VW_VERSION for build.rs # 新增步骤：为 build.rs 注入 VW_VERSION 环境变量
+        run: |
+          # 将从 GitHub API 获取到的版本号，设置为 VW_VERSION 环境变量
+          # build.rs 会优先读取这个环境变量，从而确保 Server Installed 显示正确版本
+          echo "VW_VERSION=${{ env.VAULTWARDEN_VERSION }}" >> $GITHUB_ENV
+          echo "注入 VW_VERSION=${{ env.VAULTWARDEN_VERSION }} 到编译环境" # 调试输出
 
       - name: Build and Push Multi-Arch Docker image # 步骤5: 构建并推送到 Docker Hub
         uses: docker/build-push-action@v5 # 使用 Docker 官方的构建/推送 Action
@@ -56,8 +58,7 @@ jobs:
           platforms: linux/amd64,linux/arm64 # 关键：指定要构建的架构为 AMD64 和 ARM64
           push: true # 关键：设置为 true 以推送到 Docker Hub
           # 关键：使用变量来构建镜像标签
-          tags: |
+          tags: | # 使用多行标签
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:latest
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ env.VAULTWARDEN_VERSION }}
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ env.VAULTWARDEN_VERSION }}-${{ secrets.DOCKER_USERNAME }}
-
