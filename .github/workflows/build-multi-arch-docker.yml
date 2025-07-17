@@ -52,7 +52,7 @@ jobs:
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:latest
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ env.VAULTWARDEN_VERSION }}
-            ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ env.VAULTWARDEN_VERSION }}-${{ secrets.DOCKER_USERNAME }}
+          #  ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ env.VAULTWARDEN_VERSION }}-${{ secrets.DOCKER_USERNAME }}
           # --- 新增：将 VW_VERSION 作为 build-arg 传递给 Dockerfile ---
           build-args: |
             VW_VERSION=${{ env.VAULTWARDEN_VERSION }}
