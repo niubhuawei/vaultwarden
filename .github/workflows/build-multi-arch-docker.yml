@@ -62,7 +62,6 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          # 请确保下面的每一行标签都从最左边开始，没有空格
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:latest
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ env.VAULTWARDEN_VERSION }}
