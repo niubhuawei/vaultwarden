@@ -16,7 +16,8 @@ jobs:
     outputs:
       vaultwarden_version: ${{ steps.get_latest_version.outputs.VAULTWARDEN_VERSION_OUTPUT }}
       docker_repo_name: ${{ env.DOCKER_REPO }}
-      build_job_status: ${{ job.status }}
+      # --- 关键修改：通过一个虚拟步骤来捕获 build 作业的最终状态 ---
+      build_job_status: ${{ steps.capture_build_status.outputs.status }}
 
     steps:
       - name: Checkout code
@@ -61,7 +62,6 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          # --- 关键修改：确保标签行没有额外的缩进 ---
           # 请确保下面的每一行标签都从最左边开始，没有空格
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:latest
@@ -70,14 +70,20 @@ jobs:
           build-args: |
             VW_VERSION=${{ env.VAULTWARDEN_VERSION }}
 
+      - name: Capture Build Status # --- 新增步骤：捕获 build 作业的最终状态 ---
+        id: capture_build_status
+        if: always() # 确保这个步骤总是运行，无论之前的步骤成功或失败
+        run: |
+          echo "status=${{ job.status }}" >> $GITHUB_OUTPUT # 将 job.status 设置为步骤的输出
+
   telegram-notification:
-    needs: build
-    if: always()
+    needs: build # 确保在 build 作业成功后才运行
+    if: always() # 总是运行，无论 build 作业成功或失败
     runs-on: ubuntu-latest
     env:
       VAULTWARDEN_VERSION: ${{ needs.build.outputs.vaultwarden_version }}
       DOCKER_REPO: ${{ needs.build.outputs.docker_repo_name }}
-      BUILD_STATUS: ${{ job.status }}
+      BUILD_STATUS: ${{ needs.build.outputs.build_job_status }} # 引用 build 作业的输出
 
     steps:
       - name: Send Telegram Notification
