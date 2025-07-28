@@ -62,6 +62,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           # --- 关键修改：确保标签行没有额外的缩进 ---
+          # 请确保下面的每一行标签都从最左边开始，没有空格
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:latest
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ env.VAULTWARDEN_VERSION }}
@@ -76,7 +77,7 @@ jobs:
     env:
       VAULTWARDEN_VERSION: ${{ needs.build.outputs.vaultwarden_version }}
       DOCKER_REPO: ${{ needs.build.outputs.docker_repo_name }}
-      BUILD_STATUS: ${{ needs.build.outputs.build_job_status }}
+      BUILD_STATUS: ${{ job.status }}
 
     steps:
       - name: Send Telegram Notification
