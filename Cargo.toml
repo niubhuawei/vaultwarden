@@ -34,6 +34,10 @@ enable_mimalloc = ["dep:mimalloc"]
 query_logger = ["dep:diesel_logger"]
 s3 = ["opendal/services-s3", "dep:aws-config", "dep:aws-credential-types", "dep:aws-smithy-runtime-api", "dep:anyhow", "dep:http", "dep:reqsign"]
 
+# OIDC specific features
+oidc-accept-rfc3339-timestamps = ["openidconnect/accept-rfc3339-timestamps"]
+oidc-accept-string-booleans = ["openidconnect/accept-string-booleans"]
+
 # Enable unstable features, requires nightly
 # Currently only used to enable rusts official ip support
 unstable = []
@@ -120,7 +124,12 @@ totp-lite = "2.0.1"
 yubico = { package = "yubico_ng", version = "0.13.0", features = ["online-tokio"], default-features = false }
 
 # WebAuthn libraries
-webauthn-rs = "0.3.2"
+# danger-allow-state-serialisation is needed to save the state in the db
+# danger-credential-internals is needed to support U2F to Webauthn migration
+# danger-user-presence-only-security-keys is needed to disable UV
+webauthn-rs = { version = "0.5.2", features = ["danger-allow-state-serialisation", "danger-credential-internals", "danger-user-presence-only-security-keys"] }
+webauthn-rs-proto = "0.5.2"
+webauthn-rs-core = "0.5.2"
 
 # Handling of URL's for WebAuthn and favicons
 url = "2.5.4"
@@ -160,6 +169,10 @@ pico-args = "0.5.0"
 # Macro ident concatenation
 pastey = "0.1.0"
 governor = "0.10.0"
+
+# OIDC for SSO
+openidconnect = { version = "4.0.1", features = ["reqwest", "native-tls"] }
+mini-moka = "0.10.2"
 
 # Check client versions for specific features.
 semver = "1.0.26"
