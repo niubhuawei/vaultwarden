@@ -1,17 +1,17 @@
-name: Build Vaultwarden Multi-Arch Docker Image # 工作流的名称
+name: Build Vaultwarden Multi-Arch Docker Image
 
 on:
   push:
     branches:
-      - main # 当代码推送到 main 分支时触发工作流
-  workflow_dispatch: # 允许您在 GitHub 网页界面手动触发此工作流
+      - main
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest # 使用最新的 Ubuntu 运行器 (这是 x86_64 架构)
+    runs-on: ubuntu-latest
 
-    env: # 定义作业级别的环境变量
-      DOCKER_REPO: server # 定义 Docker 仓库名，您可以根据需要更改为 'server' 或其他名称
+    env:
+      DOCKER_REPO: server
 
     outputs:
       vaultwarden_version: ${{ steps.get_latest_version.outputs.VAULTWARDEN_VERSION_OUTPUT }}
@@ -19,19 +19,19 @@ jobs:
       build_job_status: ${{ job.status }}
 
     steps:
-      - name: Checkout code # 步骤1: 检出仓库代码
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx # 步骤2: 设置 Docker Buildx 环境，用于多架构构建
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub # 步骤3: 登录 Docker Hub
+      - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}
 
-      - name: Get Vaultwarden Latest Release Version # 步骤4: 从 GitHub API 获取 Vaultwarden 最新发布版本号
+      - name: Get Vaultwarden Latest Release Version
         id: get_latest_version
         run: |
           LATEST_RELEASE_INFO=$(curl -sL "https://api.github.com/repos/dani-garcia/vaultwarden/releases/latest")
@@ -48,39 +48,19 @@ jobs:
           echo "VAULTWARDEN_VERSION=$VERSION" >> $GITHUB_ENV
           echo "VAULTWARDEN_VERSION_OUTPUT=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Display Obtained Version # 新增步骤：显示获取到的版本号
+      - name: Display Obtained Version
         run: |
           echo "--- 获取到的 Vaultwarden 版本号 ---"
           echo "版本号: ${{ env.VAULTWARDEN_VERSION }}"
           echo "-----------------------------------"
 
-      - name: Dynamically modify Dockerfile for build # 关键新增步骤: 动态修改 Dockerfile
-        run: |
-          # 定义要注入的行
-          INJECT_ARG_LINE="ARG VW_VERSION"
-          INJECT_ENV_LINE="ENV VW_VERSION=${VW_VERSION:-"UNKNOWN_VERSION"}"
-          TARGET_FROM_PATTERN="^FROM .*docker.io/library/rust:.* AS build"
-          
-          # 使用 sed 在目标 FROM 行之后精确插入这两行
-          # sed 命令中的变量需要被正确转义
-          sed -i "/$TARGET_FROM_PATTERN/a\\$INJECT_ARG_LINE\n$INJECT_ENV_LINE" Dockerfile
-          
-          if [ $? -ne 0 ]; then
-            echo "错误：sed 命令未能将行注入到 Dockerfile 中。可能需要手动干预。"
-            exit 1
-          fi
-          echo "已成功将 ARG 和 ENV VW_VERSION 注入到 Dockerfile 中。"
-        env:
-          VW_VERSION: ${{ env.VAULTWARDEN_VERSION }}
-
-      - name: Build and Push Multi-Arch Docker image # 步骤5: 构建并推送到 Docker Hub
+      - name: Build and Push Multi-Arch Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          # 请确保下面的每一行标签都从最左边开始，没有空格
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:latest
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ env.VAULTWARDEN_VERSION }}
@@ -95,7 +75,7 @@ jobs:
     env:
       VAULTWARDEN_VERSION: ${{ needs.build.outputs.vaultwarden_version }}
       DOCKER_REPO: ${{ needs.build.outputs.docker_repo_name }}
-      BUILD_STATUS: ${{ job.status }}
+      BUILD_STATUS: ${{ needs.build.outputs.build_job_status }}
 
     steps:
       - name: Send Telegram Notification
