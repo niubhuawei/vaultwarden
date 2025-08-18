@@ -1,0 +1,97 @@
+name: Build Vaultwarden Multi-Arch Docker Image
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      DOCKER_REPO: server
+
+    outputs:
+      vaultwarden_version: ${{ steps.get_latest_version.outputs.VAULTWARDEN_VERSION_OUTPUT }}
+      docker_repo_name: ${{ env.DOCKER_REPO }}
+      build_job_status: ${{ job.status }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Get Vaultwarden Latest Release Version
+        id: get_latest_version
+        run: |
+          LATEST_RELEASE_INFO=$(curl -sL "https://api.github.com/repos/dani-garcia/vaultwarden/releases/latest")
+          VERSION=$(echo "$LATEST_RELEASE_INFO" | jq -r '.tag_name')
+
+          echo "从 GitHub API 提取到的最新发布版本号 (用于 Docker 标签): $VERSION"
+
+          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+            echo "错误：无法从 GitHub API 获取到 Vaultwarden 的最新发布版本号。构建将立即终止。"
+            echo "API 响应: $LATEST_RELEASE_INFO"
+            exit 1
+          fi
+
+          echo "VAULTWARDEN_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "VAULTWARDEN_VERSION_OUTPUT=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Display Obtained Version
+        run: |
+          echo "--- 获取到的 Vaultwarden 版本号 ---"
+          echo "版本号: ${{ env.VAULTWARDEN_VERSION }}"
+          echo "-----------------------------------"
+
+      - name: Build and Push Multi-Arch Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:latest
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ env.VAULTWARDEN_VERSION }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ env.VAULTWARDEN_VERSION }}-${{ secrets.DOCKER_USERNAME }}
+          build-args: |
+            VW_VERSION=${{ env.VAULTWARDEN_VERSION }}
+
+  telegram-notification:
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      VAULTWARDEN_VERSION: ${{ needs.build.outputs.vaultwarden_version }}
+      DOCKER_REPO: ${{ needs.build.outputs.docker_repo_name }}
+      BUILD_STATUS: ${{ needs.build.outputs.build_job_status }}
+
+    steps:
+      - name: Send Telegram Notification
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            ${{ (env.BUILD_STATUS == 'success' && '✅ Vaultwarden 多架构 Docker 镜像构建成功！') || '' }}
+            ${{ (env.BUILD_STATUS == 'failure' && '❌ Vaultwarden 多架构 Docker 镜像构建失败！') || '' }}
+            ${{ (env.BUILD_STATUS == 'cancelled' && '🚫 Vaultwarden 多架构 Docker 镜像构建已取消！') || '' }}
+
+            仓库: ${{ github.repository }}
+            分支: ${{ github.ref_name }}
+            提交: ${{ github.sha }}
+            版本: ${{ env.VAULTWARDEN_VERSION }}
+            Docker Hub 镜像: ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:${{ env.VAULTWARDEN_VERSION }}
+            工作流链接: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          disable_web_page_preview: true
