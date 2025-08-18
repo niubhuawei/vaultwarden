@@ -8,6 +8,7 @@ on:
 
 jobs:
   build:
+    if: "!contains(github.event.head_commit.message, 'Restore workflow files')" # 关键条件
     runs-on: ubuntu-latest
 
     env:
