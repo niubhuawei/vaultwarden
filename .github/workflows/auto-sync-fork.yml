@@ -1,0 +1,62 @@
+name: Auto Sync Fork with Upstream # 工作流名称
+
+on:
+  schedule:
+    # 每天 UTC 00:00 运行
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # 允许推送同步的更改
+    steps:
+      - name: Checkout Forked Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          ref: main
+
+      - name: Configure Git User
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Backup Important Workflow Files
+        run: |
+          mkdir -p /tmp
+          cp .github/workflows/auto-sync-fork.yml /tmp/auto-sync-fork.yml.bak
+          cp .github/workflows/build-multi-arch-docker.yml /tmp/build-multi-arch-docker.yml.bak
+
+      - name: Sync with Upstream
+        run: |
+          git remote add upstream https://github.com/dani-garcia/vaultwarden.git || true
+          git fetch upstream
+          git merge --no-edit upstream/main
+
+      - name: Restore YML Files If Missing After Sync
+        run: |
+          RESTORE=0
+          if [ ! -f .github/workflows/auto-sync-fork.yml ]; then
+            echo "auto-sync-fork.yml missing, restoring from backup."
+            cp /tmp/auto-sync-fork.yml.bak .github/workflows/auto-sync-fork.yml
+            RESTORE=1
+          fi
+          if [ ! -f .github/workflows/build-multi-arch-docker.yml ]; then
+            echo "build-multi-arch-docker.yml missing, restoring from backup."
+            cp /tmp/build-multi-arch-docker.yml.bak .github/workflows/build-multi-arch-docker.yml
+            RESTORE=1
+          fi
+          if [ "$RESTORE" -eq 1 ]; then
+            git add .github/workflows/auto-sync-fork.yml .github/workflows/build-multi-arch-docker.yml
+            git commit -m "Restore workflow files deleted by upstream sync"
+          fi
+
+      - name: Push changes to Forked Repository
+        run: |
+          git push origin main
+
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
