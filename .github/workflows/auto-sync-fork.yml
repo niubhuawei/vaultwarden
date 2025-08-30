@@ -10,7 +10,8 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # 允许推送同步的更改
+      contents: write # 只需要内容写入权限，不再需要工作流权限
+
     steps:
       - name: Checkout Forked Repository
         uses: actions/checkout@v4
@@ -24,39 +25,41 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Backup Important Workflow Files
+      - name: Sync with Upstream but Exclude Workflows
         run: |
-          mkdir -p /tmp
-          cp .github/workflows/auto-sync-fork.yml /tmp/auto-sync-fork.yml.bak
-          cp .github/workflows/build-multi-arch-docker.yml /tmp/build-multi-arch-docker.yml.bak
-
-      - name: Sync with Upstream
-        run: |
+          # 添加上游仓库
           git remote add upstream https://github.com/dani-garcia/vaultwarden.git || true
+          
+          # 从上游仓库获取最新内容
           git fetch upstream
-          git merge --no-edit upstream/main
-
-      - name: Restore YML Files If Missing After Sync
-        run: |
-          RESTORE=0
-          if [ ! -f .github/workflows/auto-sync-fork.yml ]; then
-            echo "auto-sync-fork.yml missing, restoring from backup."
-            cp /tmp/auto-sync-fork.yml.bak .github/workflows/auto-sync-fork.yml
-            RESTORE=1
+          
+          # 记录合并前的 HEAD commit ID
+          ORIGINAL_HEAD=$(git rev-parse HEAD)
+          
+          # 合并上游 main 分支，允许可能出现的冲突
+          # 我们使用 --no-ff 来确保总是创建一个合并提交，方便后续操作
+          git merge --no-ff --no-edit upstream/main
+          
+          # 检查合并是否成功。如果没成功（比如有冲突），脚本会在这里失败，这是期望的行为
+          if [ $? -ne 0 ]; then
+            echo "Merge failed, likely due to conflicts. Aborting."
+            git merge --abort
+            exit 1
           fi
-          if [ ! -f .github/workflows/build-multi-arch-docker.yml ]; then
-            echo "build-multi-arch-docker.yml missing, restoring from backup."
-            cp /tmp/build-multi-arch-docker.yml.bak .github/workflows/build-multi-arch-docker.yml
-            RESTORE=1
-          fi
-          if [ "$RESTORE" -eq 1 ]; then
-            git add .github/workflows/auto-sync-fork.yml .github/workflows/build-multi-arch-docker.yml
-            git commit -m "Restore workflow files deleted by upstream sync"
-          fi
+          
+          echo "Successfully merged with upstream. Now checking for workflow changes to revert."
+          
+          # 撤销（revert）对 .github/workflows/ 目录的所有更改
+          # 使用合并前的 HEAD commit 来恢复整个目录
+          git checkout $ORIGINAL_HEAD -- .github/workflows/
+          
+          # 使用 --amend 来修改刚才的合并提交，而不是创建一个新的提交
+          # 这使得版本历史看起来就像这次合并从未触碰过 workflows 目录一样
+          # --no-edit 表示使用原始的合并提交信息
+          git commit --amend --no-edit
+          
+          echo "Workflow directory changes have been reverted from the merge commit."
 
       - name: Push changes to Forked Repository
         run: |
           git push origin main
-
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
