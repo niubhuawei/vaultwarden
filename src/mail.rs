@@ -302,9 +302,9 @@ pub async fn send_invite(
             .append_pair("organizationUserId", &member_id)
             .append_pair("token", &invite_token);
 
-        if CONFIG.sso_enabled() && CONFIG.sso_only() {
+        if CONFIG.sso_enabled() {
             query_params.append_pair("orgUserHasExistingUser", "false");
-            query_params.append_pair("orgSsoIdentifier", org_name);
+            query_params.append_pair("orgSsoIdentifier", &org_id);
         } else if user.private_key.is_some() {
             query_params.append_pair("orgUserHasExistingUser", "true");
         }
@@ -577,6 +577,20 @@ pub async fn send_change_email(address: &str, token: &str) -> EmptyResult {
 pub async fn send_change_email_existing(address: &str, acting_address: &str) -> EmptyResult {
     let (subject, body_html, body_text) = get_text(
         "email/change_email_existing",
+        json!({
+            "url": CONFIG.domain(),
+            "img_src": CONFIG._smtp_img_src(),
+            "existing_address": address,
+            "acting_address": acting_address,
+        }),
+    )?;
+
+    send_email(address, &subject, body_html, body_text).await
+}
+
+pub async fn send_change_email_invited(address: &str, acting_address: &str) -> EmptyResult {
+    let (subject, body_html, body_text) = get_text(
+        "email/change_email_invited",
         json!({
             "url": CONFIG.domain(),
             "img_src": CONFIG._smtp_img_src(),

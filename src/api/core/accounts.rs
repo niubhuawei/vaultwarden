@@ -64,6 +64,7 @@ pub fn routes() -> Vec<rocket::Route> {
         put_auth_request,
         get_auth_request_response,
         get_auth_requests,
+        get_auth_requests_pending,
     ]
 }
 
@@ -909,10 +910,20 @@ async fn post_email_token(data: Json<EmailTokenData>, headers: Headers, mut conn
         err!("Invalid password")
     }
 
-    if User::find_by_mail(&data.new_email, &mut conn).await.is_some() {
+    if let Some(existing_user) = User::find_by_mail(&data.new_email, &mut conn).await {
         if CONFIG.mail_enabled() {
-            if let Err(e) = mail::send_change_email_existing(&data.new_email, &user.email).await {
-                error!("Error sending change-email-existing email: {e:#?}");
+            // check if existing_user has already registered
+            if existing_user.password_hash.is_empty() {
+                // inform an invited user about how to delete their temporary account if the
+                // request was done intentionally and they want to update their mail address
+                if let Err(e) = mail::send_change_email_invited(&data.new_email, &user.email).await {
+                    error!("Error sending change-email-invited email: {e:#?}");
+                }
+            } else {
+                // inform existing user about the failed attempt to change their mail address
+                if let Err(e) = mail::send_change_email_existing(&data.new_email, &user.email).await {
+                    error!("Error sending change-email-existing email: {e:#?}");
+                }
             }
         }
         err!("Email already in use");
@@ -1605,8 +1616,15 @@ async fn get_auth_request_response(
     })))
 }
 
+// Now unused but not yet removed
+// cf https://github.com/bitwarden/clients/blob/9b2fbdba1c028bf3394064609630d2ec224baefa/libs/common/src/services/api.service.ts#L245
 #[get("/auth-requests")]
-async fn get_auth_requests(headers: Headers, mut conn: DbConn) -> JsonResult {
+async fn get_auth_requests(headers: Headers, conn: DbConn) -> JsonResult {
+    get_auth_requests_pending(headers, conn).await
+}
+
+#[get("/auth-requests/pending")]
+async fn get_auth_requests_pending(headers: Headers, mut conn: DbConn) -> JsonResult {
     let auth_requests = AuthRequest::find_by_user(&headers.user.uuid, &mut conn).await;
 
     Ok(Json(json!({
